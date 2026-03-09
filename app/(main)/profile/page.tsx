@@ -1,28 +1,32 @@
 "use client";
-import { Camera, Save, Star, LogIn, UserPlus, Link as LinkIcon, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
+import { Save, LogIn, UserPlus, Link as LinkIcon, ShieldCheck, AlertCircle, Loader2, Edit3, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/utils/supabase'; // 确保你之前在这个路径创建了 supabase 实例
+import { supabase } from '@/utils/supabase';
 
 export default function ProfilePage() {
   const [session, setSession] = useState<any>(null);
-  const [loading, setLoading] = useState(true); // 页面初始化加载状态
-  const [authLoading, setAuthLoading] = useState(false); // 登录/注册按钮加载状态
+  const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(false);
 
+  // 鉴权表单状态
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
-  const [email, setEmail] = useState('');
+  const [studentId, setStudentId] = useState(''); // 改为只存学号
   const [password, setPassword] = useState('');
   const [agreed, setAgreed] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // 检查是否已登录
+  // 个人资料编辑状态
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [editNickname, setEditNickname] = useState('');
+  const [updateLoading, setUpdateLoading] = useState(false);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setLoading(false);
     });
 
-    // 监听登录状态变化
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
@@ -30,21 +34,22 @@ export default function ProfilePage() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // 处理注册与登录逻辑
+  // 注册/登录逻辑
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
     setAuthLoading(true);
 
-    // 强制校验华东师大邮箱
-    if (authMode === 'register' && !email.endsWith('@stu.ecnu.edu.cn')) {
-      setErrorMsg('抱歉，目前仅限华东师范大学学生 (@stu.ecnu.edu.cn) 注册体验。');
+    if (!studentId.trim()) {
+      setErrorMsg('请输入学号');
       setAuthLoading(false);
       return;
     }
-    
-    // 强制校验用户协议
+
+    // 自动拼接后缀
+    const fullEmail = `${studentId.trim()}@stu.ecnu.edu.cn`;
+
     if (authMode === 'register' && !agreed) {
       setErrorMsg('请阅读并同意《鱼丸用户协议》及位置共享条款。');
       setAuthLoading(false);
@@ -52,36 +57,38 @@ export default function ProfilePage() {
     }
 
     if (authMode === 'register') {
-      // 执行注册
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-      });
-      if (error) {
-        setErrorMsg(error.message);
-      } else {
-        setSuccessMsg('注册成功！为了验证身份，请前往您的邮箱点击验证链接（若找不到请检查垃圾邮件夹）。');
-        // 可选：如果不强制邮箱验证，这里就会直接获得 session
-      }
+      const { error } = await supabase.auth.signUp({ email: fullEmail, password });
+      if (error) setErrorMsg(error.message);
+      else setSuccessMsg('注册成功！请前往邮箱点击验证链接（若找不到请检查垃圾邮件）。');
     } else {
-      // 执行登录
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (error) {
-        setErrorMsg('登录失败：邮箱或密码错误，或邮箱尚未验证。');
-      }
+      const { error } = await supabase.auth.signInWithPassword({ email: fullEmail, password });
+      if (error) setErrorMsg('登录失败：学号或密码错误，或邮箱尚未验证。');
     }
     setAuthLoading(false);
   };
 
-  // 退出登录
   const handleSignOut = async () => {
     await supabase.auth.signOut();
   };
 
-  // 页面加载中动画
+  // 保存昵称修改
+  const handleUpdateProfile = async () => {
+    if (!editNickname.trim()) return;
+    setUpdateLoading(true);
+    
+    const { data, error } = await supabase.auth.updateUser({
+      data: { nickname: editNickname.trim() }
+    });
+
+    if (!error && data.user) {
+      setSession({ ...session, user: data.user });
+      setIsEditingProfile(false);
+    } else {
+      alert("更新失败，请稍后重试");
+    }
+    setUpdateLoading(false);
+  };
+
   if (loading) {
     return (
       <div className="h-[60vh] flex flex-col items-center justify-center text-slate-500">
@@ -91,7 +98,7 @@ export default function ProfilePage() {
     );
   }
 
-  // ====== 未登录界面：注册与登录 ======
+  // ====== 未登录界面：学号专属注册/登录 ======
   if (!session) {
     return (
       <div className="max-w-md mx-auto mt-10 sm:mt-16 p-8 bg-white dark:bg-[#161b22] rounded-3xl border border-slate-200 dark:border-gray-800 shadow-xl relative overflow-hidden">
@@ -100,7 +107,7 @@ export default function ProfilePage() {
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
             {authMode === 'login' ? '登录鱼丸安防系统' : '激活专属安防账号'}
           </h2>
-          <p className="text-slate-500 text-sm mt-2">保护爱车，参与校园智慧出行</p>
+          <p className="text-slate-500 text-sm mt-2">华东师范大学专属</p>
         </div>
 
         {errorMsg && (
@@ -119,13 +126,19 @@ export default function ProfilePage() {
 
         <form className="space-y-5 relative z-10" onSubmit={handleAuth}>
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-1">学号邮箱</label>
-            <input 
-              type="email" required 
-              placeholder="学号@stu.ecnu.edu.cn" 
-              value={email} onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-[#0d1117] border border-slate-300 dark:border-gray-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" 
-            />
+            <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-1">学号</label>
+            {/* 优化后的学号输入框 */}
+            <div className="flex items-center bg-slate-50 dark:bg-[#0d1117] border border-slate-300 dark:border-gray-700 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 transition-all">
+              <input 
+                type="text" required 
+                placeholder="请输入学号" 
+                value={studentId} onChange={(e) => setStudentId(e.target.value)}
+                className="w-full bg-transparent px-4 py-3 text-slate-900 dark:text-white outline-none" 
+              />
+              <span className="px-3 py-3 text-sm text-slate-500 dark:text-gray-400 border-l border-slate-300 dark:border-gray-700 bg-slate-100 dark:bg-slate-800/50 shrink-0">
+                @stu.ecnu.edu.cn
+              </span>
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-1">密码</label>
@@ -166,7 +179,14 @@ export default function ProfilePage() {
     );
   }
 
-  // ====== 已登录界面：个人信息与设备管理 ======
+  // ====== 已登录界面 ======
+  // 解析用户元数据
+  const userMeta = session.user.user_metadata || {};
+  const defaultStudentId = session.user.email?.split('@')[0] || 'User';
+  const displayNickname = userMeta.nickname || defaultStudentId;
+  // 头像种子绑定昵称，昵称改变，头像自动焕新
+  const avatarSeed = displayNickname;
+
   return (
     <div className="max-w-4xl mx-auto space-y-8">
       <header className="flex justify-between items-end">
@@ -181,18 +201,41 @@ export default function ProfilePage() {
         {/* 左侧：个人资料卡 */}
         <div className="md:col-span-1 space-y-6">
           <div className="bg-white dark:bg-[#161b22] rounded-3xl border border-slate-200 dark:border-gray-800 shadow-sm overflow-hidden p-6 text-center">
-            <div className="relative inline-block cursor-pointer group mb-4">
-              <div className="w-24 h-24 rounded-full border-4 border-slate-100 dark:border-gray-800 overflow-hidden bg-slate-200 dark:bg-slate-800 mx-auto">
-                <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${session.user.email}`} alt="Avatar" className="w-full h-full object-cover" />
+            
+            {/* 动态盲盒头像 */}
+            <div className="relative inline-block group mb-4">
+              <div className="w-24 h-24 rounded-full border-4 border-slate-100 dark:border-gray-800 overflow-hidden bg-slate-200 dark:bg-slate-800 mx-auto transition-transform hover:scale-105">
+                <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${avatarSeed}`} alt="Avatar" className="w-full h-full object-cover" />
               </div>
             </div>
-            {/* 自动从真实 Supabase User 提取邮箱前缀作为用户名 */}
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white truncate">{session.user.email?.split('@')[0]}</h2>
-            <p className="text-slate-500 dark:text-gray-400 text-sm mt-1">华东师范大学</p>
+
+            {/* 昵称显示与编辑逻辑 */}
+            {isEditingProfile ? (
+              <div className="mt-2 space-y-3">
+                <input 
+                  type="text" 
+                  autoFocus
+                  placeholder="输入新昵称"
+                  value={editNickname} 
+                  onChange={(e) => setEditNickname(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-[#0d1117] border border-slate-300 dark:border-gray-700 rounded-xl px-3 py-2 text-center text-slate-900 dark:text-white outline-none focus:border-blue-500"
+                />
+                <div className="flex space-x-2 justify-center">
+                  <button onClick={() => setIsEditingProfile(false)} className="p-2 rounded-lg bg-slate-100 dark:bg-gray-800 text-slate-500 hover:text-slate-700 dark:hover:text-gray-300"><X size={18} /></button>
+                  <button onClick={handleUpdateProfile} disabled={updateLoading} className="p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 flex items-center">
+                    {updateLoading ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-2 group flex items-center justify-center cursor-pointer" onClick={() => { setEditNickname(displayNickname); setIsEditingProfile(true); }}>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white truncate max-w-[150px]">{displayNickname}</h2>
+                <Edit3 className="w-4 h-4 ml-2 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
+            )}
             
-            <div className="mt-6 inline-flex items-center bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 px-4 py-2 rounded-full text-sm font-bold border border-amber-200 dark:border-amber-900/50">
-              <Star className="w-4 h-4 mr-2" fill="currentColor" /> 文明积分: 120
-            </div>
+            <p className="text-slate-500 dark:text-gray-400 text-sm mt-2">华东师范大学</p>
+            <p className="text-slate-400 dark:text-gray-600 text-xs mt-1 font-mono">ID: {defaultStudentId}</p>
           </div>
         </div>
 
@@ -212,7 +255,7 @@ export default function ProfilePage() {
                </div>
                <hr className="border-slate-200 dark:border-gray-700 my-4" />
                <div className="flex justify-between items-center">
-                  <span className="text-sm text-slate-600 dark:text-gray-400">参与全校位置匿名共享 (获得更多积分)</span>
+                  <span className="text-sm text-slate-600 dark:text-gray-400">参与全校位置匿名共享</span>
                   <input type="checkbox" defaultChecked className="toggle-checkbox w-4 h-4" />
                </div>
             </div>
